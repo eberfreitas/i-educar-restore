@@ -1,0 +1,63 @@
+#!/usr/bin/env php
+<?php
+
+define('DS', DIRECTORY_SEPARATOR);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Garden\Cli\Cli;
+
+$cli = new Cli();
+
+$cli->description('Ferramenta de restauração de bases do i-Educar.')
+    ->opt('base:b', 'Nome da base a ser restaurada. Ex.: parauapebas.', true)
+    ->opt('date:d', 'Data do backup no seguinte formato: YYYY-MM-DD.')
+    ->opt('include-audit:i', 'Restaurar base com as tabelas da auditoria.', false, 'boolean')
+    ->opt('host:h', 'Host do banco de dados.', false, 'string')
+    ->opt('port:p', 'Porta do banco de dados.', false, 'int')
+    ->opt('user:u', 'Usuário do banco de dados.', false, 'string')
+    ->opt('password:p', 'Senha do usuário do banco de dados.', false, 'string')
+    ->opt('config-file:c', 'Caminho para o arquivo de configuração.', false, 'string')
+    ->opt('aws-key', 'Chave da AWS.', false, 'string')
+    ->opt('aws-secret', 'Chave secreta da AWS.', false, 'string');
+
+$args = $cli->parse($argv, true);
+$currDir = getcwd();
+
+chdir($currDir);
+
+$configFile = $args->getOpt('config-file', $currDir . DS . 'config.ini');
+$configFile = realpath($configFile);
+$userConfig = [];
+
+if (file_exists($configFile)) {
+    $userConfig = parse_ini_file($configFile);
+}
+
+$requiredConfigs = ['host', 'port', 'user', 'password', 'aws-key', 'aws-secret'];
+$config = [];
+
+foreach ($requiredConfigs as $conf) {
+    $config[$conf] = $args->getOpt($conf, $userConfig[$conf] ?? null);
+}
+
+foreach ($config as $k => $c) {
+    if (empty($c)) {
+        echo $cli->red(sprintf('A configuração "%s" deve ser informada no arquivo de configuração ou nas opções de linha de comando. Veja o --help para saber mais.', $k));
+
+        return;
+    }
+}
+
+$date = $this->getOpt('date', null) ?? date('Y-m-d');
+
+try {
+    $config['date'] = new DateTime($date);
+} catch (Exception $e) {
+    echo $cli->red($e->getMessage());
+
+    return;
+}
+
+$config['include-audit'] = (bool) $args->getOpt('include-audit', false);
+$config['base'] = $args->getOpt('base');

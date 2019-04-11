@@ -3,6 +3,7 @@
     "description": "Ferramenta para fácil restauração de bases de backup do i-Educar",
     "type": "project",
     "require": {
-        "aws/aws-sdk-php": "^3.91"
+        "aws/aws-sdk-php": "^3.91",
+        "vanilla/garden-cli": "^2.1"
     }
 }

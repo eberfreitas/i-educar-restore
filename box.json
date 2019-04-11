@@ -1,0 +1,9 @@
+{
+    "main": "bin/run",
+    "output": "restore.phar",
+    "finder": [{
+        "name": "*.php",
+        "in": "vendor"
+    }],
+    "stub": true
+}
