@@ -14,15 +14,18 @@ $cli = new Cli();
 $cli->description('Database restore tool for i-Educar.')
     ->opt('base:b', 'Database name to be restored. Ex.: saopaulo.', true, 'string')
     ->opt('newbase:B', 'New database to be created. Defaults to --base.', false, 'string')
-    ->opt('date:d', 'Backup date.')
-    ->opt('include-audit:i', 'Restore with audit tables. They are removed by default.', false, 'boolean')
-    ->opt('host:h', 'DB host.', false, 'string')
-    ->opt('port:p', 'DB port.', false, 'int')
-    ->opt('user:u', 'DB user.', false, 'string')
-    ->opt('password:P', 'DB password.', false, 'string')
-    ->opt('config-file:c', 'Config file path.', false, 'string')
-    ->opt('aws-key', 'AWS key.', false, 'string')
-    ->opt('aws-secret', 'AWS secret.', false, 'string');
+    ->opt('date:d', 'Backup date. Defaults to current date.')
+    ->opt('include-audit:i', 'Restore with audit tables. They are not restored by default.', false, 'boolean')
+    ->opt('host:h', 'DB host (can be informed in the config file).', false, 'string')
+    ->opt('port:p', 'DB port (can be informed in the config file).', false, 'int')
+    ->opt('user:u', 'DB user (can be informed in the config file).', false, 'string')
+    ->opt('password:P', 'DB password (can be informed in the config file).', false, 'string')
+    ->opt('config-file:c', 'Config file path. Defaults to "config.ini" in the current directory.', false, 'string')
+    ->opt('aws-bucket', 'AWS bucket (can be informed in the config file).', false, 'string')
+    ->opt('aws-region', 'AWS prefered region (can be informed in the config file).', false, 'string')
+    ->opt('aws-key', 'AWS key (can be informed in the config file).', false, 'string')
+    ->opt('aws-secret', 'AWS secret (can be informed in the config file).', false, 'string')
+    ->opt('aws-prefix', 'AWS search prefix (can be informed in the config file).', false, 'string');
 
 $args = $cli->parse($argv, true);
 $currDir = getcwd();
@@ -37,7 +40,16 @@ if (file_exists($configFile)) {
     $userConfig = parse_ini_file($configFile);
 }
 
-$requiredConfigs = ['host', 'port', 'user', 'aws-key', 'aws-secret'];
+$requiredConfigs = [
+    'host',
+    'port',
+    'user',
+    'aws-bucket',
+    'aws-key',
+    'aws-secret',
+    'aws-prefix'
+];
+
 $config = [];
 
 foreach ($requiredConfigs as $conf) {
@@ -45,8 +57,8 @@ foreach ($requiredConfigs as $conf) {
 }
 
 foreach ($config as $k => $c) {
-    if (empty($c)) {
-        echo $cli->red(sprintf('Configuration key "%s" must be informed. See --help to know more.', $k));
+    if (is_null($c)) {
+        echo $cli->red(sprintf('Configuration key "%s" must be informed as an option or via config file.', $k));
 
         exit(1);
     }
@@ -61,13 +73,15 @@ try {
 }
 
 $config['base'] = $args->getOpt('base');
-$config['newbase'] = $args->getOpt('newbase', $config['base']);
 $config['date'] = $date->format('Y-m-d');
+$config['year'] = $date->format('Y');
+$config['month'] = $date->format('m');
+$config['day'] = $date->format('d');
 $config['include-audit'] = (bool) $args->getOpt('include-audit', false);
-$config['bucket'] = 'portabilis';
-$config['aws-region'] = 'sa-east-1';
+$config['aws-region'] = $args->getOpt('aws-region', 'sa-east-1');
+$config['newbase'] = format($args->getOpt('newbase', $config['base']), $config);
 
-//--
+//---
 
 function format(string $template, array $data): string
 {
@@ -80,7 +94,7 @@ function format(string $template, array $data): string
     return strtr($template, $replacePairs);
 }
 
-//--
+//---
 
 function pgCmd(string $command, array $data = []): string
 {
@@ -95,7 +109,7 @@ function pgCmd(string $command, array $data = []): string
     return format($command, $data);
 }
 
-//--
+//---
 
 exec(pgCmd('pg_isready --host {host} --port {port} --user {user}'), $output);
 
@@ -105,7 +119,7 @@ if (strpos($output[0], 'accepting connections') === false) {
     exit(1);
 }
 
-//--
+//---
 
 echo $cli->blue(format('Searching backups for "{base}" / {date}', $config)) . "\n\n";
 
@@ -118,15 +132,10 @@ $s3 = new S3Client([
     ],
 ]);
 
-$prefix = format('private/backups/bases/ieducar/{year}/{month}/ieducar_{base}_{date}', [
-    'year' => $date->format('Y'),
-    'month' => $date->format('m'),
-    'base' => $config['base'],
-    'date' => $config['date'],
-]);
+$prefix = format($config['aws-prefix'], $config);
 
 $backups = $s3->listObjects([
-    'Bucket' => $config['bucket'],
+    'Bucket' => $config['aws-bucket'],
     'Delimiter' => '/',
     'Prefix' => $prefix,
     'MaxKeys' => 1,
@@ -150,7 +159,7 @@ if (file_exists($backupFilename)) {
 }
 
 $cmd = $s3->getCommand('GetObject', [
-    'Bucket' => $config['bucket'],
+    'Bucket' => $config['aws-bucket'],
     'Key' => $backupKey
 ]);
 
@@ -184,6 +193,8 @@ if ($config['include-audit'] === false) {
     }
 }
 
+//---
+
 echo $cli->blue('Dropping and creating database...') . "\n\n";
 
 exec(pgCmd('psql -h {host} -p {port} -U {user} -c "{command}"', [
@@ -196,6 +207,8 @@ passthru(pgCmd('psql -h {host} -p {port} -U {user} -c "CREATE DATABASE {newbase}
 
 echo "\n";
 
+//---
+
 echo $cli->blue('Restoring database...') . "\n\n";
 
 passthru(pgCmd('pg_restore -L {databaseListFile} --host={host} --port={port} --username={user} --dbname={newbase} {backupFilename}',
@@ -207,6 +220,8 @@ passthru(pgCmd('psql -h {host} -p {port} -U {user} -c "{command}"', [
 ]));
 
 echo "\n";
+
+//---
 
 echo $cli->blue('Cleaning up...');
 

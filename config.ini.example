@@ -1,6 +1,9 @@
 host=127.0.0.1
 port=5434
 user=postgres
-password=
-aws-key=KEYHERE
-aws-secret=SECRETHERE
+password=SECRET
+aws-key=AWSKEY
+aws-secret=AWS_SECRET
+aws-bucket=bucket
+aws-region=sa-east-1
+aws-prefix=backups/
