@@ -8,12 +8,50 @@ sistema i-Educar. Para que ele funcione são feitas algumas suposições:
 
 ## Como instalar
 
-...
+Faça download do script na lista de releases:
 
-## Quick start
+https://github.com/eberfreitas/i-educar-restore/releases
+
+Após ter feito o download, dê permissão de execução para o arquivo:
+
+```
+$ chmod +x restore.phar
+```
+
+E se quiser usar o script globalmente, basta movê-lo para uma pasta em seu
+`path`. Ex.:
+
+```
+$ sudo mv restore.phar /usr/local/bin/restore
+```
+
+Depois disso faça uma cópia do arquivo de configurações que você encontra
+[aqui](https://raw.githubusercontent.com/eberfreitas/i-educar-restore/master/config.ini.example).
+
+Coloque numa pasta qualquer, renomeie para `config.ini` e altere os valores de
+acordo com sua realidade. Da mesma pasta onde está este arquivo execute o
+script:
+
+```
+$ restore -b ieducar
+```
+
+Este comando irá restaurar o banco de dados `ieducar`. Se você quiser rodar o
+script de outra pasta você ainda pode informar o caminho do arquivo de
+configuração assim:
+
+```
+$ restore -b ieducar -c /path/do/config.ini
+```
+
+Ao informar o arquivo de configuração diretamente ele pode ter qualquer nome. E
+se você quiser pode executar o script sem qualquer arquivo de configuração.
+Basta informar todas as chaves de configuração conforme descrito abaixo:
 
 ```
 $ restore --help
+usage: restore [<options>]
+
 Database restore tool for i-Educar.
 
 OPTIONS
@@ -46,17 +84,18 @@ configurações tem comportamento especial:
 
 | Chave | Descrição |
 |---|---|
-| date| Por padrão o script irá buscar por backups na data atual mas você pode informar alguma outra data com esta chave. Ex. `--date 2019-01-01` |
+| date| Por padrão o script irá buscar por backups na data atual mas você pode informar alguma outra data com esta chave. Ex. `--date 2019-01-01`. Independente do formato que você usar para informar a data, internamente ela será convertida para o formato YYYY-MM-DD. |
 | aws-prefix | Quando o sistema for buscar pelo arquivo de backup no S3 ele irá usar esta chave como parâmetro para a busca. Por se tratar de um valor dinâmico você pode usar placeholders que serão substituidos pelos valores de outras chaves da configuração. Ex.: `--aws-prefix backup/ieducar_{date}`. Neste exemplo, na data 12/12/2018 o prefixo será `backup/ieducar_2018-12-12`. |
-| newbase | Por padrão o sistema irá baixar a base sendo buscada e irá restaurar no banco de dados com o mesmo nome. Isso quer dizer que se o banco já existir ele será removido. Se quiser evitar a remoção do banco você pode informar um nome alternativo para a nova base. Ex.: `--newbase nova_restauracao`. A exemplo da chave `aws-prefix` você também pode usar placeholders no nome da nova base. |
+| newbase | Por padrão o sistema irá baixar a base sendo buscada e irá restaurar com o mesmo nome. Isso quer dizer que se o banco já existir ele será sobrescrevido. Para evitar isto você pode informar um nome alternativo para a nova base. Ex.: `--newbase nova_restauracao`. A exemplo da chave `aws-prefix` você também pode usar placeholders no nome da nova base. Ex.: `--newbase ieducar_{year}_{month}_{day}`. |
 
-Além das chaves de configuração informadas acima, internamente você também tem acesso às seguintes chaves para serem usadas como placeholders:
+Além das chaves de configuração informadas acima, internamente você também tem
+acesso às seguintes chaves para serem usadas como placeholders:
 
 - `year`
 - `month`
 - `day`
 
-## Bulding
+## Gerando o phar
 
 Para gerar um arquivo *.phar a partir do repositório e recomendado usar o
 [Box](https://box-project.github.io/box2/).
