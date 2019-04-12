@@ -1,10 +1,11 @@
 # i-educar-restore
 
-Este é um script para auxiliar no download e na restuaração de bases para o
+Este é um script para auxiliar no download e na restauração de bases para o
 sistema i-Educar. Para que ele funcione são feitas algumas suposições:
 
 - Os backups são guardados no serviço da AWS S3;
-- É feito um backup diário da base.
+- É feito um backup diário da base;
+- O caminho do backup envolve o nome da base.
 
 ## Como instalar
 
@@ -43,6 +44,15 @@ configuração assim:
 ```
 $ restore -b ieducar -c /path/do/config.ini
 ```
+
+Ou se preferir use uma configuração global colocando o arquivo em:
+
+```
+~/.config/i-educar-restore/config.ini
+```
+
+Desta forma, independentemente de onde estiver, estas configurações serão
+utilizadas sem a necessidade de especificar o arquivo na linha de comando.
 
 Ao informar o arquivo de configuração diretamente ele pode ter qualquer nome. E
 se você quiser pode executar o script sem qualquer arquivo de configuração.
@@ -94,6 +104,19 @@ acesso às seguintes chaves para serem usadas como placeholders:
 - `year`
 - `month`
 - `day`
+
+### Configuração global
+
+Além de poder informar todos os parâmetros pela linha de comando,  através de um
+arquivo de configuração na pasta onde o script está rodando ou em outro local
+indicado pela opção `--config-file` você pode criar uma configuração global em:
+
+```
+~/.config/i-educar-restore/config.ini
+```
+
+Assim o script irá funcionar com estas configurações não importando a pasta de
+onde for chamado.
 
 ## Gerando o phar
 

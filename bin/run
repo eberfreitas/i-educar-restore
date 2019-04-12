@@ -2,6 +2,7 @@
 <?php
 
 define('DS', DIRECTORY_SEPARATOR);
+define('HOME', getenv('HOME'));
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
@@ -32,12 +33,24 @@ $currDir = getcwd();
 
 chdir($currDir);
 
+echo "\n";
+
+$globalConfigFile = HOME . DS . '.config' . DS . 'i-educar-restore' . DS . 'config.ini';
 $configFile = $args->getOpt('config-file', $currDir . DS . 'config.ini');
 $configFile = realpath($configFile);
+$realConfigFile = null;
 $userConfig = [];
 
 if (file_exists($configFile)) {
-    $userConfig = parse_ini_file($configFile);
+    $realConfigFile = $configFile;
+} elseif (file_exists($globalConfigFile)) {
+    $realConfigFile = $globalConfigFile;
+}
+
+if ($realConfigFile) {
+    $userConfig = parse_ini_file($realConfigFile);
+
+    echo $cli->blue('Using config file at "' . $realConfigFile . '"') . "\n\n";
 }
 
 $requiredConfigs = [
@@ -151,7 +164,7 @@ $backupKey = $backups['Contents'][0]['Key'];
 $backupParts = explode('/', $backupKey);
 $backupFilename = array_pop($backupParts);
 
-echo $cli->green('Backup found: ' . $backupFilename) . "\n\n";
+echo $cli->green('Backup file found "' . $backupFilename) . "\"\n\n";
 echo $cli->blue('Preparing download...') . "\n\n";
 
 if (file_exists($backupFilename)) {
