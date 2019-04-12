@@ -1,2 +1,5 @@
 /vendor/
 config.ini
+*.tmp
+*.backup
+*.phar
