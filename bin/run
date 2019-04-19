@@ -332,9 +332,15 @@ echo "\n";
 
 echo $cli->blue('Restoring database...') . "\n\n";
 
-passthru(pgCmd('pg_restore -L {databaseListFile} --host={host} --port={port} --username={user} --dbname={newbase} {backupFilename}',
-    compact('databaseListFile', 'backupFilename')
-));
+if ($userConfig['tempserver']) {
+    passthru(pgCmd('pg_restore --host={host} --port={port} --username={user} --dbname={newbase} {backupFilename}',
+        compact('databaseListFile', 'backupFilename')
+    ));
+} else {
+    passthru(pgCmd('pg_restore -L {databaseListFile} --host={host} --port={port} --username={user} --dbname={newbase} {backupFilename}',
+        compact('databaseListFile', 'backupFilename')
+    ));
+}
 
 passthru(pgCmd('psql -h {host} -p {port} -U {user} -c "{command}"', [
     'command' => format('ALTER DATABASE {newbase} SET search_path = \"\{user}\", public, portal, cadastro, acesso, alimentos, consistenciacao, historico, pmiacoes, pmicontrolesis, pmidrh, pmieducar, pmiotopic, urbano, modules;', $config)
