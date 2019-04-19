@@ -182,15 +182,12 @@ $url = (string) $request->getUri();
 $downloadCommand = getDownloadCommand($url, $backupFilename);
 
 if ($userConfig['tempserver']) {
-    $host = $userConfig['tempserver-host'];
-    $user = $userConfig['tempserver-user'];
-    $key = $userConfig['tempserver-sshkey'];
-    $downloadfolder = $userConfig['tempserver-downloadfolder'];
     passthru(
-        format('ssh -o "StrictHostKeyChecking no" {user}@{host} -i {key} -t "cd {downloadfolder} && ', compact('user','host','key','downloadfolder')) 
-            . $downloadCommand 
-            . '"'
-        );
+        getCommandIntoSsh(
+            $downloadCommand,
+            $userConfig
+        )
+    );      
 } else {
     passthru($downloadCommand);
 }
@@ -199,11 +196,25 @@ if ($userConfig['tempserver']) {
 
 $databaseListFile = '__db_list.tmp';
 
-if (file_exists($databaseListFile)) {
-    @unlink($databaseListFile);
-}
+$restoreCommand = getRestoreCommand($backupFilename, $databaseListFile);
 
-exec(pgCmd('pg_restore -l {backupFilename} > {databaseListFile}', compact('backupFilename', 'databaseListFile')));
+if ($userConfig['tempserver']) {
+    exec(
+        getCommandIntoSsh(
+            'rm ' . $databaseListFile,
+            $userConfig
+        )
+    );
+    exec(
+        getCommandIntoSsh(
+            $restoreCommand,
+            $userConfig
+        )
+    );
+} else {
+    @unlink($databaseListFile);
+    exec($restoreCommand);
+}
 
 if ($config['include-audit'] === false) {
     $auditTables = [
@@ -216,10 +227,21 @@ if ($config['include-audit'] === false) {
     foreach ($auditTables as $table) {
         $table = str_replace('.', ' ', $table);
 
-        exec(format('sed -i \'/TABLE DATA {table}/d\' {databaseListFile}', compact('table', 'databaseListFile')));
+        $removeTableCommand = getRemoveTableCommand($table, $databaseListFile);
+
+        if ($userConfig['tempserver']) {
+            exec(
+                getCommandIntoSsh(
+                    $removeTableCommand,
+                    $userConfig
+                )
+            );
+        } else {
+            exec($removeTableCommand);
+        }
     }
 }
-
+die;
 //---
 
 echo $cli->blue('Dropping and creating database...') . "\n\n";
@@ -259,4 +281,22 @@ exit(0);
 
 function getDownloadCommand($url, $backupFilename) {
     return format('wget -O {backupFilename} "{url}"', compact('backupFilename', 'url'));
+}
+
+function getRestoreCommand($backupFilename, $databaseListFile){
+    return pgCmd('pg_restore -l {backupFilename} > {databaseListFile}', compact('backupFilename', 'databaseListFile'));
+}
+
+function getCommandIntoSsh($command, $config) {
+    $host = $config['tempserver-host'];
+    $user = $config['tempserver-user'];
+    $key = $config['tempserver-sshkey'];
+    $downloadfolder = $config['tempserver-downloadfolder'];
+
+    return format('ssh -o "StrictHostKeyChecking no" {user}@{host} -i {key} -t "cd {downloadfolder} && ' . $command . '"', 
+        compact('user','host','key','downloadfolder'));
+}
+
+function getRemoveTableCommand($table, $databaseListFile) {
+    return exec(format('sed -i \'/TABLE DATA {table}/d\' {databaseListFile}', compact('table', 'databaseListFile')));
 }
