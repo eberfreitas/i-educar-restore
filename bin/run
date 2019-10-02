@@ -179,17 +179,39 @@ $cmd = $s3->getCommand('GetObject', [
 $request = $s3->createPresignedRequest($cmd, '+1 minute');
 $url = (string) $request->getUri();
 
-passthru(format('wget -O {backupFilename} "{url}"', compact('backupFilename', 'url')));
+$downloadCommand = getDownloadCommand($url, $backupFilename);
+
+if ($userConfig['tempserver']) {
+    passthru(
+        getCommandIntoSsh(
+            $downloadCommand
+        )
+    );      
+} else {
+    passthru($downloadCommand);
+}
 
 //---
 
 $databaseListFile = '__db_list.tmp';
 
-if (file_exists($databaseListFile)) {
-    @unlink($databaseListFile);
-}
+$restoreCommand = getRestoreCommand($backupFilename, $databaseListFile);
 
-exec(pgCmd('pg_restore -l {backupFilename} > {databaseListFile}', compact('backupFilename', 'databaseListFile')));
+if ($userConfig['tempserver']) {
+    exec(
+        getCommandIntoSsh(
+            'rm ' . $databaseListFile
+        )
+    );
+    exec(
+        getCommandIntoSsh(
+            $restoreCommand
+        )
+    );
+} else {
+    @unlink($databaseListFile);
+    exec($restoreCommand);
+}
 
 if ($config['include-audit'] === false) {
     $auditTables = [
@@ -202,8 +224,94 @@ if ($config['include-audit'] === false) {
     foreach ($auditTables as $table) {
         $table = str_replace('.', ' ', $table);
 
-        exec(format('sed -i \'/TABLE DATA {table}/d\' {databaseListFile}', compact('table', 'databaseListFile')));
+        $removeTableCommand = getRemoveTableCommand($table, $databaseListFile);
+
+        if ($userConfig['tempserver']) {
+            exec(
+                getCommandIntoSsh($removeTableCommand)
+            );
+        } else {
+            exec($removeTableCommand);
+        }
     }
+}
+
+//---
+
+if ($userConfig['tempserver']) {
+    $tempDatabase = 'tmp_restore_' . $config['newbase'];
+
+    echo $cli->blue('Dropping and creating database in remote server...') . "\n\n";
+
+    exec(
+        getCommandIntoSsh(
+            pgCmd('psql -c \'{command}\'', [
+            'command' => format('SELECT pg_terminate_backend (pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = \'{newbase}\';', $config),
+            'newbase' => $tempDatabase,]
+            )
+        )
+    );
+
+    passthru(
+        getCommandIntoSsh(
+            pgCmd('dropdb {newbase}', ['newbase' => $tempDatabase])
+        )
+    );
+
+    passthru(
+        getCommandIntoSsh(
+            pgCmd('createdb {newbase}', ['newbase' => $tempDatabase])
+        )
+    );
+
+    echo "\n";
+
+    //---
+
+    echo $cli->blue('Restoring database in remote server...') . "\n\n";
+
+    passthru(
+        getCommandIntoSsh(
+            pgCmd(
+                'pg_restore -L {databaseListFile} --dbname={newbase} {backupFilename}',
+                [
+                    'databaseListFile' => $databaseListFile,
+                    'backupFilename' => $backupFilename,
+                    'newbase' => $tempDatabase
+                ]
+            )
+        )
+    );
+
+    echo "\n";
+
+    echo $cli->blue('Generating dump in remote server...') . "\n\n";
+
+    passthru(
+        getCommandIntoSsh(
+            format(
+                'pg_dump -Fc --no-owner -d {newbase} -f {newbase}.backup',
+                ['newbase' => $tempDatabase]
+            )
+        )
+    );
+
+    $host = $userConfig['tempserver-host'];
+    $user = $userConfig['tempserver-user'];
+    $key = $userConfig['tempserver-sshkey'];
+    $downloadfolder = $userConfig['tempserver-downloadfolder'];
+    
+    passthru(
+        format(
+            'scp -i {key} {user}@{host}:{downloadfolder}/{newbase}.backup {backupFilename}',
+            array_merge(
+                compact('user','host','key','downloadfolder','backupFilename'),
+                ['newbase' => $tempDatabase]
+            )
+        )
+    );
+
+    echo "\n";
 }
 
 //---
@@ -224,9 +332,15 @@ echo "\n";
 
 echo $cli->blue('Restoring database...') . "\n\n";
 
-passthru(pgCmd('pg_restore -L {databaseListFile} --host={host} --port={port} --username={user} --dbname={newbase} {backupFilename}',
-    compact('databaseListFile', 'backupFilename')
-));
+if ($userConfig['tempserver']) {
+    passthru(pgCmd('pg_restore --host={host} --port={port} --username={user} --dbname={newbase} {backupFilename}',
+        compact('databaseListFile', 'backupFilename')
+    ));
+} else {
+    passthru(pgCmd('pg_restore -L {databaseListFile} --host={host} --port={port} --username={user} --dbname={newbase} {backupFilename}',
+        compact('databaseListFile', 'backupFilename')
+    ));
+}
 
 passthru(pgCmd('psql -h {host} -p {port} -U {user} -c "{command}"', [
     'command' => format('ALTER DATABASE {newbase} SET search_path = \"\{user}\", public, portal, cadastro, acesso, alimentos, consistenciacao, historico, pmiacoes, pmicontrolesis, pmidrh, pmieducar, pmiotopic, urbano, modules;', $config)
@@ -242,3 +356,27 @@ echo $cli->blue('Cleaning up...');
 @unlink($backupFilename);
 
 exit(0);
+
+function getCommandIntoSsh($command) {
+    global $userConfig;
+
+    $host = $userConfig['tempserver-host'];
+    $user = $userConfig['tempserver-user'];
+    $key = $userConfig['tempserver-sshkey'];
+    $downloadfolder = $userConfig['tempserver-downloadfolder'];
+
+    return format('ssh -o "StrictHostKeyChecking no" {user}@{host} -i {key} -t "cd {downloadfolder} && ' . $command . '"', 
+        compact('user','host','key','downloadfolder'));
+}
+
+function getDownloadCommand($url, $backupFilename) {
+    return format('wget -O {backupFilename} "{url}"', compact('backupFilename', 'url'));
+}
+
+function getRestoreCommand($backupFilename, $databaseListFile){
+    return pgCmd('pg_restore -l {backupFilename} > {databaseListFile}', compact('backupFilename', 'databaseListFile'));
+}
+
+function getRemoveTableCommand($table, $databaseListFile) {
+    return format('sed -i \'/TABLE DATA {table}/d\' {databaseListFile}', compact('table', 'databaseListFile'));
+}
